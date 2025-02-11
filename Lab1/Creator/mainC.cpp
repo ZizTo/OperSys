@@ -27,10 +27,12 @@ int main(int argc, char* argv[]) {
 		emp.num = i + 1;
 
 		string im;
+		cout << "Enter name: ";
 		cin >> im;
 		strncpy_s(emp.name, im.c_str(), sizeof(emp.name) - 1);
 
 		double hours;
+		cout << "Enter hours: ";
 		cin >> hours;
 		emp.hours = hours;
 
@@ -39,7 +41,7 @@ int main(int argc, char* argv[]) {
 	
 
 	outF.close();
-
+	cout << "All entered";
 	_getch();
 	return 0;
 }
