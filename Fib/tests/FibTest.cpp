@@ -7,13 +7,11 @@ TEST(FibonacciTest, FirstNFibonacci) {
     EXPECT_EQ(fib.getFirstNFibonacci(10), expected);
 }
 
-// “ест дл€ проверки обработки ошибок
 TEST(FibonacciTest, NegativeInput) {
     Fibonacci fib;
     EXPECT_THROW(fib.getFirstNFibonacci(-1), std::invalid_argument);
 }
 
-// “ест дл€ проверки пустой последовательности
 TEST(FibonacciTest, ZeroInput) {
     Fibonacci fib;
     std::vector<int> expected = {};
