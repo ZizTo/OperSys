@@ -1,4 +1,0 @@
-Employee number 1: Doshik work for 10 hours and get -10
-Employee number 2: Continuou work for 90.1 hours and get -90.1
-Employee number 3: Igor work for 0 hours and get -0
-Employee number 3: Igor work for 0 hours and get -0

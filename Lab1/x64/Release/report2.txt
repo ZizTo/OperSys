@@ -1,8 +1,0 @@
-Employee number 1: Continuou work for 10 hours and get 20
-Employee number 2: Doshik work for 2 hours and get 4
-Employee number 3: kirill work for 758.5 hours and get 1517
-Employee number 4: Pasha work for 0 hours and get 0
-Employee number 5: Rita work for 13 hours and get 26
-Employee number 6: Igor work for 30 hours and get 60
-Employee number 7: coninuous work for 90 hours and get 180
-Employee number 7: coninuous work for 90 hours and get 180
