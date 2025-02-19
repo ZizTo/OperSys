@@ -4,6 +4,12 @@
 int main(int argc, char* argv[]) {
 	_cputs("Hello, i'm creater.\n");
 
+	if (argc != 3) {
+		_cputs("Invalid arguments");
+		_getch();
+		return 1;
+	}
+
 	Creator *cr = new Creator(string(argv[1]));
 	int kol = atoi(argv[2]);
 	
