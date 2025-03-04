@@ -6,7 +6,7 @@
 #include <cmath>
 
 std::vector<int> mas;
-int minEl = 0, maxEl = 0, n;
+int minEl = 0, maxEl = 0, n = 0;
 double avar = 0;
 
 void min_max() {
