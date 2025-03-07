@@ -43,14 +43,14 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 
-add_executable(Main14 Lab2/Lab2.cpp)
+add_executable(Main14 Lab2/Lab214.cpp)
 target_include_directories(Main14 
 	PRIVATE 
 		${CMAKE_CURRENT_SOURCE_DIR}/Lab2 
 )
 
 enable_testing()
-add_executable(LabTests14 Tests/tests.cpp)
+add_executable(LabTests14 Tests/tests14.cpp)
 target_include_directories(LabTests14 
 	PRIVATE 
 		${CMAKE_CURRENT_SOURCE_DIR}/Tests
