@@ -2,26 +2,24 @@
 #include "doctest.h"
 #include "lab3.h"
 
+HANDLE StopEvent;
+
 int a, suma;
 void sum(int lpParam) {
 	Sleep(500);
+	SetEvent(StopEvent);
 	suma = a + lpParam; 
 }
 
 TEST_CASE("Thread start") {
+	StopEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 	a = 3; 
 	int b = 1;
 	std::thread ath(sum, b);
 	ath.join();
+	WaitForSingleObject(StopEvent, INFINITE);
 	REQUIRE(suma == (a + b));
-}
-
-TEST_CASE("Thread stop") {
-	a = 3;
-	int b = 1;
-	HANDLE hThread = CreateThread(NULL, 0, sum, (void*)b, 0, NULL);
-	WaitForSingleObject(hThread, INFINITE);
-	REQUIRE(CloseHandle(hThread));
+	REQUIRE(CloseHandle(StopEvent));
 }
 
 TEST_CASE("Thread marker works") {
@@ -32,22 +30,19 @@ TEST_CASE("Thread marker works") {
 	thkol = 1;
 	thrkol = thkol;
 
-	HANDLE* hThreads = new HANDLE[thkol];
+	thread* hThreads = new thread[thkol];
 	StopEvent = new HANDLE[thkol];
 	ResumeEvent = new HANDLE[thkol];
 	DeleteEvent = new HANDLE[thkol];
 	IDThreads.resize(thkol);
 	isThreadWorks.resize(thkol, true);
 
-	InitializeCriticalSection(&cs);
-	InitializeCriticalSection(&csout);
-
 	for (int i = 0; i < thkol; i++)
 	{
 		StopEvent[i] = CreateEvent(NULL, FALSE, FALSE, NULL);
 		ResumeEvent[i] = CreateEvent(NULL, FALSE, FALSE, NULL);
 		DeleteEvent[i] = CreateEvent(NULL, FALSE, FALSE, NULL);
-		hThreads[i] = CreateThread(NULL, 0, marker, (void*)i, 0, NULL);
+		hThreads[i] = thread(marker, i);
 	}
 
 	while (true)
@@ -56,9 +51,9 @@ TEST_CASE("Thread marker works") {
 
 		int thrId = 0;
 
+		ResetEvent(DeadThEvent);
 		SetEvent(DeleteEvent[thrId]);
-		WaitForSingleObject(hThreads[thrId], INFINITE);
-		CloseHandle(hThreads[thrId]);
+		WaitForSingleObject(DeadThEvent, INFINITE);
 
 		REQUIRE(thrkol <= 0);
 		if (thrkol <= 0) {
@@ -66,8 +61,6 @@ TEST_CASE("Thread marker works") {
 		}
 	}
 
-	DeleteCriticalSection(&cs);
-	DeleteCriticalSection(&csout);
 	for (int i = 0; i < thkol; i++)
 	{
 		REQUIRE(CloseHandle(StopEvent[i]));
