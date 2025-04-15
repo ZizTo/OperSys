@@ -1,7 +1,7 @@
 #pragma once
 
 struct SharedData {
-    int read_idx;
-    int write_idx;
+    int messageID;
+    int writerID;
     char message[20];
 };

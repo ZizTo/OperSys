@@ -26,12 +26,12 @@ target_include_directories(Receiver
 		${CMAKE_CURRENT_SOURCE_DIR}/data
 )
 
-#add_executable(Reporter Reporter/mainR.cpp)
-#target_include_directories(Reporter 
-#	PRIVATE 
-#		${CMAKE_CURRENT_SOURCE_DIR}/Reporter
-#		${CMAKE_CURRENT_SOURCE_DIR}/data
-#)
+add_executable(Sender Sender/Sender.cpp)
+target_include_directories(Sender 
+	PRIVATE 
+		${CMAKE_CURRENT_SOURCE_DIR}/Sender 
+		${CMAKE_CURRENT_SOURCE_DIR}/data
+)
 
 #enable_testing()
 #add_executable(LabTests Tests/tests.cpp)
