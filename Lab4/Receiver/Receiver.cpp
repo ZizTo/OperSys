@@ -31,20 +31,33 @@ int main(int argc, char* argv[]) {
 		ZeroMemory(&si, sizeof(STARTUPINFO));
 		si.cb = sizeof(STARTUPINFO);
 	}
+	HANDLE* eventReady = new HANDLE[kolSenders];
+	HANDLE mutexFile = CreateMutex(NULL, false, "mutexFile");
 
 	for (int i = 0; i < kolSenders; i++)
 	{
-		CreateProcess(NULL, strdup(commLine.c_str()), NULL, NULL, FALSE,
+		eventReady[i] = CreateEvent(NULL, false, false, "ReadyN"+i);
+		CreateProcess(NULL, strdup((commLine + " " + i).c_str()), NULL, NULL, FALSE,
 			CREATE_NEW_CONSOLE, NULL, NULL, &siv[i], &piv[i]);
 	}
+
+	WaitForMultipleObjects(kolSenders, eventReady, TRUE, INFINITE);
 	
 	while (true) {
 		char com;
-		cout << "q - quit; r - receive";
+		cout << "q - quit; r - receive\nEnter command: ";
 		cin >> com;
 		if (com == 'q') break;
 		else if (com == 'r') {
+			WaitForSingleObject(mutexFile, INFINITE);
 
+			ifstream file(binfl, ios::binary);
+			while(!file.eof()) {
+				file.read(reinterpret_cast<char*>(&data), sizeof(data));
+				cout << data.message << endl;
+			}
+
+			ReleaseMutex(mutexFile);
 		}
 		else { cout << "Command not found\n"; }
 	}
@@ -53,5 +66,8 @@ int main(int argc, char* argv[]) {
 
 	for (auto pi : piv) {
 		CloseHandle(pi.hThread);
+	}
+	for (int i = 0; i < kolSenders; i++) {
+		CloseHandle(eventReady[i]);
 	}
 }
