@@ -41,7 +41,9 @@ int main(int argc, char* argv[]) {
 				if (lowestID > data.messageID) { lowestID = data.messageID; }
 				if (maxID < data.messageID) { maxID = data.messageID; }
 				datamas.push_back(data);
+				cout << data.messageID << ": from " << data.writerID << " - " << data.message << endl;
 			}
+			datamas.erase(datamas.begin() + datamas.size() - 1);
 			file.close();
 
 			for (int i = 0; i < datamas.size(); i++)
@@ -53,13 +55,13 @@ int main(int argc, char* argv[]) {
 					break;
 				}
 			}
-			for (int i = 0; i < datamas.size(); i++)
+			/*for (int i = 0; i < datamas.size(); i++)
 			{
 				if (datamas[i].messageID == lowestID) {
 					datamas.erase(datamas.begin() + i);
 					break;
 				}
-			}
+			}*/
 			
 			std::ofstream ofs;
 			ofs.open(binFl, ios::binary | ofstream::out | ofstream::trunc);
@@ -68,6 +70,8 @@ int main(int argc, char* argv[]) {
 			ofstream out(binFl, ios::binary);
 			for (auto eldata : datamas) {
 				out.write(reinterpret_cast<char*>(&eldata), sizeof(eldata));
+				cout << "------------ WHAT WE GET ------------\n";
+				cout << eldata.messageID << ": from " << eldata.writerID << " - " << eldata.message << endl;
 			}
 
 			out.close();

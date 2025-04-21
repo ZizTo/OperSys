@@ -64,10 +64,10 @@ target_include_directories(Sender14
 )
 
 enable_testing()
-add_executable(LabTests14 Tests14/tests.cpp)
+add_executable(LabTests14 Tests/tests.cpp)
 target_include_directories(LabTests14
 	PRIVATE 
-		${CMAKE_CURRENT_SOURCE_DIR}/Tests14
+		${CMAKE_CURRENT_SOURCE_DIR}/Tests
 		${CMAKE_CURRENT_SOURCE_DIR}/data
 )
 

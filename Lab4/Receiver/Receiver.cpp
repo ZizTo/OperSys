@@ -17,14 +17,17 @@ int main(int argc, char* argv[]) {
 
 	ofstream onF(binfl, ios::binary);
 	SharedData data = { -1, -1, {'a'}};
-	onF.write(reinterpret_cast<char*>(&data), sizeof(data));
+	for (int i = 0; i < kolZap; i++)
+	{
+		onF.write(reinterpret_cast<char*>(&data), sizeof(data));
+	}
 	onF.close();
 
 	int kolSenders;
 	cout << "Enter number of Senders: ";
 	cin >> kolSenders;
 
-	string commLine = "Sender.exe " + binfl;
+	string commLine = "Sender98.exe " + binfl;
 	vector<STARTUPINFO> siv(kolSenders);
 	vector<PROCESS_INFORMATION> piv(kolSenders);
 
