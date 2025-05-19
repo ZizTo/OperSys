@@ -12,10 +12,10 @@ string binFl;
 
 vector<STARTUPINFO> siv;
 vector<PROCESS_INFORMATION> piv;
-HANDLE NeedToRead;
-HANDLE hNamedPipe;
-HANDLE* YouCanReadNow;
-HANDLE* AllDead;
+vector<HANDLE> hPipes;  // Array of pipe handles, one for each client
+HANDLE* NeedToRead;     // Array of events for client read requests
+HANDLE* YouCanReadNow;  // Array of events for server responses
+HANDLE* AllDead;        // Array of events for client termination
 
 // Track which records are being accessed and how (true for write, false for read)
 vector<pair<int, bool>> accessedRecords;
@@ -25,14 +25,15 @@ void CleanUp() {
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
     }
-    CloseHandle(NeedToRead);
-    CloseHandle(hNamedPipe);
     
     for (int i = 0; i < piv.size(); i++) {
+        CloseHandle(NeedToRead[i]);
         CloseHandle(YouCanReadNow[i]);
         CloseHandle(AllDead[i]);
+        CloseHandle(hPipes[i]);
     }
     
+    delete[] NeedToRead;
     delete[] YouCanReadNow;
     delete[] AllDead;
 }
@@ -136,63 +137,109 @@ int main() {
     cin >> ClKol;
     piv.resize(ClKol);
     siv.resize(ClKol);
+    hPipes.resize(ClKol);
+    
+    // Create events for each client
+    NeedToRead = new HANDLE[ClKol];
+    YouCanReadNow = new HANDLE[ClKol];
+    AllDead = new HANDLE[ClKol];
 
+    // Initialize each client's events
     for (int i = 0; i < ClKol; i++) {
+        string readEventName = "ReadEvent" + to_string(i);
+        string responseEventName = "Read" + to_string(i);
+        string deadEventName = "Dead" + to_string(i);
+        
+        NeedToRead[i] = CreateEvent(NULL, false, false, readEventName.c_str());
+        YouCanReadNow[i] = CreateEvent(NULL, false, false, responseEventName.c_str());
+        AllDead[i] = CreateEvent(NULL, false, false, deadEventName.c_str());
+        
         ZeroMemory(&siv[i], sizeof(STARTUPINFO));
         siv[i].cb = sizeof(STARTUPINFO);
     }
 
-    hNamedPipe = CreateNamedPipe(
-        "\\\\.\\pipe\\pipe", // pipe name
-        PIPE_ACCESS_DUPLEX, // read/write access
-        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-        PIPE_UNLIMITED_INSTANCES, // max instances
-        0, // default output buffer size
-        0, // default input buffer size
-        INFINITE, // client waits indefinitely
-        (LPSECURITY_ATTRIBUTES)NULL
-    );
-
-    string commLine = "Client98.exe ";
+    // Create and connect to each client with a unique pipe
     for (int i = 0; i < ClKol; i++) {
-        CreateProcess(NULL, strdup((commLine + to_string(i)).c_str()), NULL, NULL, FALSE,
-            CREATE_NEW_CONSOLE, NULL, NULL, &siv[i], &piv[i]);
+        string pipeName = "\\\\.\\pipe\\pipe" + to_string(i);
         
-        if (ConnectNamedPipe(hNamedPipe, (LPOVERLAPPED)NULL)) {
-            cout << "Connected to client " << i << endl;
+        // Create a named pipe for this client
+        hPipes[i] = CreateNamedPipe(
+            pipeName.c_str(),             // unique pipe name for each client
+            PIPE_ACCESS_DUPLEX,           // read/write access
+            PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+            1,                            // only one instance per pipe
+            0,                            // default output buffer size
+            0,                            // default input buffer size
+            INFINITE,                     // client waits indefinitely
+            (LPSECURITY_ATTRIBUTES)NULL
+        );
+        
+        if (hPipes[i] == INVALID_HANDLE_VALUE) {
+            cerr << "CreateNamedPipe failed for client " << i << ". Error: " << GetLastError() << endl;
+            continue;
         }
+        
+        // Create the client process
+        string commLine = "Client98.exe " + to_string(i);
+        if (!CreateProcess(NULL, strdup(commLine.c_str()), NULL, NULL, FALSE,
+                          CREATE_NEW_CONSOLE, NULL, NULL, &siv[i], &piv[i])) {
+            cerr << "CreateProcess failed for client " << i << ". Error: " << GetLastError() << endl;
+            CloseHandle(hPipes[i]);
+            continue;
+        }
+        
+        // Wait for the client to connect to the pipe
+        cout << "Waiting for client " << i << " to connect..." << endl;
+        if (!ConnectNamedPipe(hPipes[i], NULL)) {
+            cerr << "ConnectNamedPipe failed for client " << i << ". Error: " << GetLastError() << endl;
+            CloseHandle(hPipes[i]);
+            continue;
+        }
+        
+        cout << "Client " << i << " connected successfully." << endl;
     }
 
-    NeedToRead = CreateEvent(NULL, false, false, "ReadEvent");
-    AllDead = new HANDLE[ClKol];
-    for (int i = 0; i < ClKol; i++) {
-        AllDead[i] = CreateEvent(NULL, false, false, ("Dead" + to_string(i)).c_str());
-    }
+    // Main server loop to handle client requests
+    DWORD dwWaitResult;
+    HANDLE* allEvents = new HANDLE[ClKol];
+    bool clientsActive = true;
     
-    YouCanReadNow = new HANDLE[ClKol];
-    for (int i = 0; i < ClKol; i++) {
-        YouCanReadNow[i] = CreateEvent(NULL, false, false, ("Read" + to_string(i)).c_str());
-    }
-
-    while (true) {
+    while (clientsActive) {
+        // Check if all clients have terminated
         if (WaitForMultipleObjects(ClKol, AllDead, TRUE, 0) != WAIT_TIMEOUT) {
             cout << "All clients have exited" << endl;
             break;
         }
-
-        if (WaitForSingleObject(NeedToRead, 0) != WAIT_TIMEOUT) {
-            ResetEvent(NeedToRead);
+        
+        // Copy all read request events to an array for WaitForMultipleObjects
+        for (int i = 0; i < ClKol; i++) {
+            allEvents[i] = NeedToRead[i];
+        }
+        
+        // Wait for any client to signal a request
+        dwWaitResult = WaitForMultipleObjects(ClKol, allEvents, FALSE, 100);
+        
+        // Check if a client has a request (not timeout)
+        if (dwWaitResult != WAIT_TIMEOUT && dwWaitResult < WAIT_OBJECT_0 + ClKol) {
+            int clientIndex = dwWaitResult - WAIT_OBJECT_0;
+            ResetEvent(NeedToRead[clientIndex]);
+            
+            // Process the client's request
             DWORD dwBytesRead;
             DWORD dwBytesWrite;
             Message message;
-            ReadFile(
-                hNamedPipe, // pipe handle
-                &message, // buffer for input
-                sizeof(Message), // bytes to read
-                &dwBytesRead, // bytes read
-                (LPOVERLAPPED)NULL // synchronous read
-            );
-
+            
+            if (!ReadFile(
+                hPipes[clientIndex],  // pipe for this client
+                &message,             // buffer for input
+                sizeof(Message),      // bytes to read
+                &dwBytesRead,         // bytes read
+                NULL                  // synchronous read
+            )) {
+                cerr << "ReadFile failed for client " << clientIndex << ". Error: " << GetLastError() << endl;
+                continue;
+            }
+            
             Message answ;
             answ.id = message.id;
 
@@ -243,19 +290,24 @@ int main() {
                 answ.type = FAIL_READ;
                 break;
             }
-
-            WriteFile(
-                hNamedPipe, // pipe handle
-                &answ, // buffer for output
-                sizeof(Message), // bytes to write
-                &dwBytesWrite, // bytes written
-                (LPOVERLAPPED)NULL // synchronous write
-            );
-
-            SetEvent(YouCanReadNow[message.id]);
+            
+            if (!WriteFile(
+                hPipes[clientIndex],  // pipe for this client
+                &answ,                // buffer for output
+                sizeof(Message),      // bytes to write
+                &dwBytesWrite,        // bytes written
+                NULL                  // synchronous write
+            )) {
+                cerr << "WriteFile failed for client " << clientIndex << ". Error: " << GetLastError() << endl;
+                continue;
+            }
+            
+            // Signal the client that it can now read the response
+            SetEvent(YouCanReadNow[clientIndex]);
         }
     }
     
+    delete[] allEvents;
     DisplayEmployeeFile();
     cout << "Press Enter to close...";
     cin.ignore();

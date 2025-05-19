@@ -43,9 +43,12 @@ int main(int argc, char* argv[]) {
     }
     
     int threadId = atoi(argv[1]);
-
+    
+    // Create a unique pipe name based on the client ID
+    string pipeName = "\\\\.\\pipe\\pipe" + to_string(threadId);
+    
     hNamedPipe = CreateFile(
-        "\\\\.\\pipe\\pipe", // pipe name
+        pipeName.c_str(),  // unique pipe name for this client
         GENERIC_READ | GENERIC_WRITE, // read and write access
         FILE_SHARE_READ | FILE_SHARE_WRITE, // share read and write
         (LPSECURITY_ATTRIBUTES)NULL, // default security
@@ -63,23 +66,26 @@ int main(int argc, char* argv[]) {
     DWORD dwBytesWrite;
     DWORD dwBytesRead;
     
-    NeedToRead = OpenEvent(EVENT_ALL_ACCESS, FALSE, "ReadEvent");
+    // Create unique event names based on client ID
+    string readEventName = "ReadEvent" + to_string(threadId);
+    string responseEventName = "Read" + to_string(threadId);
+    string deadEventName = "Dead" + to_string(threadId);
+    
+    NeedToRead = OpenEvent(EVENT_ALL_ACCESS, FALSE, readEventName.c_str());
     if (!NeedToRead) {
-        cerr << "Failed to open ReadEvent. Error: " << GetLastError() << endl;
+        cerr << "Failed to open " << readEventName << ". Error: " << GetLastError() << endl;
         CloseHandle(hNamedPipe);
         return 1;
     }
     
-    string readEventName = "Read" + to_string(threadId);
-    ICanRead = OpenEvent(EVENT_ALL_ACCESS, FALSE, readEventName.c_str());
+    ICanRead = OpenEvent(EVENT_ALL_ACCESS, FALSE, responseEventName.c_str());
     if (!ICanRead) {
-        cerr << "Failed to open " << readEventName << ". Error: " << GetLastError() << endl;
+        cerr << "Failed to open " << responseEventName << ". Error: " << GetLastError() << endl;
         CloseHandle(NeedToRead);
         CloseHandle(hNamedPipe);
         return 1;
     }
     
-    string deadEventName = "Dead" + to_string(threadId);
     IDead = OpenEvent(EVENT_ALL_ACCESS, FALSE, deadEventName.c_str());
     if (!IDead) {
         cerr << "Failed to open " << deadEventName << ". Error: " << GetLastError() << endl;
