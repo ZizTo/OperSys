@@ -4,30 +4,28 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <thread> // For std::thread (or use Windows API CreateThread)
 #include <mutex>
 #include <map>
 #include <set>
-#include <algorithm> // For std::remove
+#include <algorithm>
 
-// Global server settings
-std::string g_binFileName;
-int g_numClients = 0;
+using namespace std;
 
-// Handles for client events (server side)
-HANDLE* g_pClientDeadEvents = nullptr; // Array of events, one for each client to signal exit
-HANDLE* g_pYouCanReadNowEvents = nullptr; // Array of events, server signals client it can read response
+string binFl;
+int clKol = 0;
 
-// Per-record locking mechanism
+HANDLE* allDeadEvents = nullptr;
+HANDLE* YouReadNowEvents = nullptr;
+
 struct RecordLockInfo {
     bool isWriteLocked = false;
-    int writerClientId = -1; // Client ID holding the write lock
-    std::set<int> readerClientIds; // Client IDs holding read locks
+    int writerClientId = -1;
+    set<int> readerClientIds;
 };
-std::map<int, RecordLockInfo> g_recordLocks; // Key: employeeId
-std::mutex g_recordLocksMutex; // Mutex to protect g_recordLocks
 
-// --- Forward Declarations ---
+map<int, RecordLockInfo> recLocks;
+mutex recLocksMutex;
+
 void DisplayEmployeeFile();
 Employee FindEmployee(int employeeId);
 bool ChangeEmployee(const Employee& empData);
@@ -35,56 +33,47 @@ DWORD WINAPI ClientHandlerThread(LPVOID lpParam);
 
 struct ClientThreadArgs {
     HANDLE hPipe = INVALID_HANDLE_VALUE;
-    // No need to pass clientId, thread will discover it from the first message
 };
 
-void CleanupServerResources() {
-    if (g_pClientDeadEvents) {
-        for (int i = 0; i < g_numClients; ++i) {
-            if (g_pClientDeadEvents[i] != NULL) CloseHandle(g_pClientDeadEvents[i]);
-        }
-        delete[] g_pClientDeadEvents;
-        g_pClientDeadEvents = nullptr;
+void CleanUp() {
+    for (int i = 0; i < clKol; ++i) {
+        if (allDeadEvents[i] != NULL) CloseHandle(allDeadEvents[i]);
     }
-    if (g_pYouCanReadNowEvents) {
-        for (int i = 0; i < g_numClients; ++i) {
-            if (g_pYouCanReadNowEvents[i] != NULL) CloseHandle(g_pYouCanReadNowEvents[i]);
-        }
-        delete[] g_pYouCanReadNowEvents;
-        g_pYouCanReadNowEvents = nullptr;
+    delete[] allDeadEvents;
+    for (int i = 0; i < clKol; ++i) {
+        if (YouReadNowEvents[i] != NULL) CloseHandle(YouReadNowEvents[i]);
     }
-    // Other handles (client process/thread handles stored in main) should also be closed.
+    delete[] YouReadNowEvents;
 }
 
 void DisplayEmployee(const Employee& emp) {
-    std::cout << "Employee#" << emp.num << " - "
+    cout << "Employee#" << emp.num << " - "
         << emp.name << " - "
-        << emp.hours << std::endl;
+        << emp.hours << endl;
 }
 
 void DisplayEmployeeFile() {
-    std::ifstream file(g_binFileName, std::ios::binary);
+    ifstream file(binFl, ios::binary);
     if (!file.is_open()) {
-        std::cerr << "Error: Could not open file for display: " << g_binFileName << std::endl;
+        cerr << "Cant open " << binFl << endl;
         return;
     }
     Employee data;
-    std::cout << "\n--- Current Employee File Content ---" << std::endl;
-    // Correctly read until the end of file [Corrects extra record bug]
+    cout << endl << "--- Employee file ---" << endl;
     while (file.read(reinterpret_cast<char*>(&data), sizeof(Employee))) {
         DisplayEmployee(data);
     }
-    std::cout << "--- End of File Content ---\n" << std::endl;
+    cout << endl << endl;
     file.close();
 }
 
 Employee FindEmployee(int employeeId) {
-    std::ifstream file(g_binFileName, std::ios::binary);
+    ifstream file(binFl, ios::binary);
     Employee data;
-    data.num = -1; // Default to not found
+    data.num = -1;
 
     if (!file.is_open()) {
-        std::cerr << "Error: Could not open file for finding employee: " << g_binFileName << std::endl;
+        cerr << "Cant open " << binFl << endl;
         return data;
     }
 
@@ -95,22 +84,21 @@ Employee FindEmployee(int employeeId) {
         }
     }
     file.close();
-    data.num = -1; // Ensure not found if loop finishes
+    data.num = -1;
     return data;
 }
 
 bool ChangeEmployee(const Employee& empData) {
-    std::fstream file(g_binFileName, std::ios::binary | std::ios::in | std::ios::out);
+    fstream file(binFl, ios::binary | ios::in | ios::out);
     if (!file.is_open()) {
-        std::cerr << "Error: Could not open file for modification: " << g_binFileName << std::endl;
+        cerr << "Cant open " << binFl << endl;
         return false;
     }
 
     Employee tempEmp;
-    std::streamoff recordPosition = -1;
-    std::streamoff currentPosition = 0;
+    streamoff recordPosition = -1;
+    streamoff currentPosition = 0;
 
-    // Find the position of the record
     while (file.read(reinterpret_cast<char*>(&tempEmp), sizeof(Employee))) {
         if (tempEmp.num == empData.num) {
             recordPosition = currentPosition;
@@ -120,22 +108,12 @@ bool ChangeEmployee(const Employee& empData) {
     }
 
     if (recordPosition != -1) {
-        file.seekp(recordPosition, std::ios::beg);
-        if (file.fail()) {
-            std::cerr << "Error seeking in file to modify record ID: " << empData.num << std::endl;
-            file.close();
-            return false;
-        }
+        file.seekp(recordPosition, ios::beg);
         file.write(reinterpret_cast<const char*>(&empData), sizeof(Employee));
-        if (file.fail()) {
-            std::cerr << "Error writing modified record ID: " << empData.num << std::endl;
-            file.close();
-            return false;
-        }
-        std::cout << "Server: Record ID " << empData.num << " modified successfully." << std::endl;
+        cout << "Modified " << empData.num << endl;
     }
     else {
-        std::cerr << "Error: Record ID " << empData.num << " not found for modification." << std::endl;
+        cerr << "no " << empData.num << " in file" << endl;
         file.close();
         return false;
     }
@@ -146,165 +124,131 @@ bool ChangeEmployee(const Employee& empData) {
 
 
 int main() {
-    std::cout << "Enter binary file name: ";
-    std::cin >> g_binFileName;
+    cout << "Bin file name: ";
+    cin >> binFl;
 
-    int numEmployees;
-    std::cout << "Enter number of employees to create: ";
-    std::cin >> numEmployees;
+    int numEmpl;
+    cout << "Num of employees: ";
+    cin >> numEmpl;
 
-    std::ofstream outFile(g_binFileName, std::ios::binary | std::ios::trunc);
+    ofstream outFile(binFl, ios::binary | ios::trunc);
     if (!outFile.is_open()) {
-        std::cerr << "Error creating file: " << g_binFileName << std::endl;
+        cerr << "file err " << binFl << endl;
         return 1;
     }
 
-    for (int i = 0; i < numEmployees; ++i) {
+    for (int i = 0; i < numEmpl; ++i) {
         Employee emp;
-        emp.num = i; // Assign unique ID
-        std::cout << "Enter name for employee #" << i << ": ";
-        std::cin >> emp.name; // Simplified input, ensure it fits char name[10]
-        std::cout << "Enter hours for employee #" << i << ": ";
-        std::cin >> emp.hours;
+        emp.num = i;
+        cout << "Enter name for employee #" << i << ": ";
+        cin >> emp.name;
+        cout << "Enter hours for employee #" << i << ": ";
+        cin >> emp.hours;
         outFile.write(reinterpret_cast<char*>(&emp), sizeof(Employee));
     }
     outFile.close();
 
-    std::cout << "\nInitial file created." << std::endl;
-    DisplayEmployeeFile(); // [cite: 5]
+    DisplayEmployeeFile();
 
-    std::cout << "Enter number of client processes to launch: ";
-    std::cin >> g_numClients;
+    cout << "Number of clients: ";
+    cin >> clKol;
 
-    // Initialize event arrays
-    g_pClientDeadEvents = new HANDLE[g_numClients];
-    g_pYouCanReadNowEvents = new HANDLE[g_numClients];
+    allDeadEvents = new HANDLE[clKol];
+    YouReadNowEvents = new HANDLE[clKol];
 
-    for (int i = 0; i < g_numClients; ++i) {
-        std::string deadEventName = "DeadEventClient" + std::to_string(i);
-        g_pClientDeadEvents[i] = CreateEvent(NULL, TRUE, FALSE, deadEventName.c_str()); // Manual-reset
+    for (int i = 0; i < clKol; ++i) {
+        string deadEventName = "DeadEventClient" + to_string(i);
+        allDeadEvents[i] = CreateEvent(NULL, TRUE, FALSE, deadEventName.c_str());
 
-        std::string readReadyEventName = "YouCanReadNowClient" + std::to_string(i);
-        g_pYouCanReadNowEvents[i] = CreateEvent(NULL, FALSE, FALSE, readReadyEventName.c_str()); // Auto-reset
+        string readReadyEventName = "YouCanReadNowClient" + to_string(i);
+        YouReadNowEvents[i] = CreateEvent(NULL, FALSE, FALSE, readReadyEventName.c_str());
     }
 
-    std::vector<PROCESS_INFORMATION> clientProcessInfo(g_numClients);
-    std::vector<STARTUPINFO> clientStartupInfo(g_numClients);
+    vector<PROCESS_INFORMATION> clPi(clKol);
+    vector<STARTUPINFO> clSi(clKol);
 
-    // Launch client processes [cite: 6]
-    for (int i = 0; i < g_numClients; ++i) {
-        ZeroMemory(&clientStartupInfo[i], sizeof(STARTUPINFO));
-        clientStartupInfo[i].cb = sizeof(STARTUPINFO);
-        ZeroMemory(&clientProcessInfo[i], sizeof(PROCESS_INFORMATION));
+    for (int i = 0; i < clKol; ++i) {
+        ZeroMemory(&clSi[i], sizeof(STARTUPINFO));
+        clSi[i].cb = sizeof(STARTUPINFO);
+        ZeroMemory(&clPi[i], sizeof(PROCESS_INFORMATION));
 
-        std::string commandLine = "Client98.exe " + std::to_string(i); // Assuming client executable is named client.exe
+        string commandLine = "Client98.exe " + to_string(i); 
 
-        // CreateProcess needs a non-const char* for command line
         char* cl = new char[commandLine.length() + 1];
         strcpy_s(cl, commandLine.length() + 1, commandLine.c_str());
 
-        if (!CreateProcess(NULL, cl, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &clientStartupInfo[i], &clientProcessInfo[i])) {
-            std::cerr << "Failed to create client process #" << i << ". Error: " << GetLastError() << std::endl;
+        if (!CreateProcess(NULL, cl, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &clSi[i], &clPi[i])) {
+            cerr << "Client create err #" << i << ": " << GetLastError() << endl;
             delete[] cl;
-            // Consider cleanup and exit or trying to continue
             continue;
         }
         delete[] cl;
-        std::cout << "Server: Launched client process #" << i << " with PID " << clientProcessInfo[i].dwProcessId << std::endl;
+        cout << "started process #" << i << endl;
     }
 
-    std::vector<HANDLE> clientHandlerThreadHandles;
-    clientHandlerThreadHandles.reserve(g_numClients);
+    vector<HANDLE> clhThreadH;
+    clhThreadH.reserve(clKol);
 
-    // Main loop to accept client connections
-    for (int i = 0; i < g_numClients; ++i) {
+    for (int i = 0; i < clKol; ++i) {
         HANDLE hPipe = CreateNamedPipe(
-            "\\\\.\\pipe\\employeeDataPipe", // Consistent pipe name
+            "\\\\.\\pipe\\employeeDataPipe",
             PIPE_ACCESS_DUPLEX,
             PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-            PIPE_UNLIMITED_INSTANCES, // Allows multiple clients to use this name
-            sizeof(Message),          // Output buffer size
-            sizeof(Message),          // Input buffer size
-            0,                        // Default timeout
-            NULL);                    // Default security attributes
+            PIPE_UNLIMITED_INSTANCES,
+            sizeof(Message),          
+            sizeof(Message),          
+            0,                        
+            NULL);                    
 
         if (hPipe == INVALID_HANDLE_VALUE) {
-            std::cerr << "CreateNamedPipe failed for client connection " << i << ", GLE=" << GetLastError() << std::endl;
-            // This is serious, might need to break or cleanup existing
+            cerr << "Pipe err " << i << endl;
             continue;
         }
-        std::cout << "Server: Pipe instance created. Waiting for client #" << i << " to connect..." << std::endl;
 
-        // Wait for a client to connect to this pipe instance
-        BOOL fConnected = ConnectNamedPipe(hPipe, NULL) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
-
-        if (fConnected) {
-            std::cout << "Server: Client #" << i << " connected to pipe instance." << std::endl;
+        if (ConnectNamedPipe(hPipe, NULL)) {
+            cout << "Client #" << i << " connected" << endl;
             ClientThreadArgs* pArgs = new ClientThreadArgs();
-            pArgs->hPipe = hPipe; // Pass the connected pipe handle to the thread
-
+            pArgs->hPipe = hPipe;
             HANDLE hThread = CreateThread(
-                NULL,              // Default security attributes
-                0,                 // Default stack size
-                ClientHandlerThread, // Thread function
-                pArgs,             // Argument to thread function
-                0,                 // Default creation flags
-                NULL);             // Don't need thread identifier
-
-            if (hThread == NULL) {
-                std::cerr << "CreateThread failed for client " << i << ", GLE=" << GetLastError() << std::endl;
-                CloseHandle(hPipe); // Close this pipe instance as thread creation failed
-                delete pArgs;
-            }
-            else {
-                clientHandlerThreadHandles.push_back(hThread);
-            }
+                NULL,
+                0,
+                ClientHandlerThread,
+                pArgs,
+                0,
+                NULL);
+            clhThreadH.push_back(hThread);
         }
         else {
-            std::cerr << "ConnectNamedPipe failed for client " << i << ", GLE=" << GetLastError() << std::endl;
-            CloseHandle(hPipe); // Close this pipe instance as connection failed
+            cerr << "CNP err " << i << endl;
+            CloseHandle(hPipe);
         }
     }
 
-    std::cout << "Server: All expected clients (" << g_numClients << ") have had connection attempts. Monitoring active clients." << std::endl;
-
-    // Wait for all clients to signal they are dead
-    if (g_numClients > 0 && g_pClientDeadEvents != nullptr) {
-        std::cout << "Server: Waiting for all " << g_numClients << " client(s) to terminate..." << std::endl;
-        WaitForMultipleObjects(g_numClients, g_pClientDeadEvents, TRUE, INFINITE); // TRUE = wait for all
-        std::cout << "Server: All clients have terminated." << std::endl;
+    if (clKol > 0) {
+        WaitForMultipleObjects(clKol, allDeadEvents, TRUE, INFINITE);
+        cout << "All clients dead" << endl;
     }
-    else if (g_numClients == 0) {
-        std::cout << "Server: No clients were configured to run." << std::endl;
+    else if (clKol == 0) {
+        cout << "No clients" << endl;
     }
-
-
-    // Wait for all handler threads to complete
-    if (!clientHandlerThreadHandles.empty()) {
-        std::cout << "Server: Waiting for all client handler threads to complete..." << std::endl;
-        WaitForMultipleObjects(static_cast<DWORD>(clientHandlerThreadHandles.size()), clientHandlerThreadHandles.data(), TRUE, INFINITE);
-        std::cout << "Server: All client handler threads completed." << std::endl;
-    }
-    for (HANDLE h : clientHandlerThreadHandles) {
+    WaitForMultipleObjects(static_cast<DWORD>(clhThreadH.size()), clhThreadH.data(), TRUE, INFINITE);
+    for (HANDLE h : clhThreadH) {
         CloseHandle(h);
     }
-    clientHandlerThreadHandles.clear();
+    clhThreadH.clear();
 
+    DisplayEmployeeFile();
 
-    std::cout << "\nFinal file content after client operations:" << std::endl;
-    DisplayEmployeeFile(); // [cite: 9]
-
-    // Close client process handles
-    for (int i = 0; i < g_numClients; ++i) {
-        if (clientProcessInfo[i].hProcess != NULL) CloseHandle(clientProcessInfo[i].hProcess);
-        if (clientProcessInfo[i].hThread != NULL) CloseHandle(clientProcessInfo[i].hThread);
+    for (int i = 0; i < clKol; ++i) {
+        if (clPi[i].hProcess != NULL) CloseHandle(clPi[i].hProcess);
+        if (clPi[i].hThread != NULL) CloseHandle(clPi[i].hThread);
     }
 
-    CleanupServerResources();
+    CleanUp();
 
-    std::cout << "\nServer shutting down. Press Enter to exit." << std::endl; // [cite: 10] (simplified)
-    std::cin.ignore(); // Clear leftover newline
-    std::cin.get();
+    cout << endl << "press to close..." << endl;
+    cin.ignore();
+    cin.get();
 
     return 0;
 }
@@ -313,17 +257,13 @@ int main() {
 DWORD WINAPI ClientHandlerThread(LPVOID lpParam) {
     ClientThreadArgs* args = static_cast<ClientThreadArgs*>(lpParam);
     HANDLE hPipe = args->hPipe;
-    // Note: The client's ID (0 to g_numClients-1) will come from message.clientId.
 
     Message request, response;
     DWORD bytesRead, bytesWritten;
     bool clientActive = true;
 
-    std::cout << "Server Thread: Handler started for a client. Pipe handle: " << hPipe << std::endl;
-
     while (clientActive) {
-        // Read a request from the client
-        BOOL fSuccess = ReadFile(
+        bool fSuccess = ReadFile(
             hPipe,
             &request,
             sizeof(Message),
@@ -331,66 +271,47 @@ DWORD WINAPI ClientHandlerThread(LPVOID lpParam) {
             NULL);
 
         if (!fSuccess || bytesRead == 0) {
-            if (GetLastError() == ERROR_BROKEN_PIPE) {
-                std::cout << "Server Thread: Client disconnected (broken pipe)." << std::endl;
-            }
-            else {
-                std::cout << "Server Thread: ReadFile failed, GLE=" << GetLastError() << std::endl;
-            }
-            clientActive = false; // Assume client exited
-            break;
+            clientActive = false;
         }
-
-        // If client sends an explicit exit message type, handle it.
-        // (Currently, client signals exit via its "Dead" event, not a pipe message)
-
-        std::cout << "Server Thread: Received request type " << request.type << " from client ID " << request.clientId << " for employee ID " << request.employeeId << std::endl;
+        cout << "Got " << request.type << " from " << request.clientId << endl;
 
         response.clientId = request.clientId;
         response.employeeId = request.employeeId;
 
-        // Lock the global record lock structure before accessing
-        std::lock_guard<std::mutex> guard(g_recordLocksMutex);
+        lock_guard<mutex> guard(recLocksMutex);
 
-        RecordLockInfo& lockInfo = g_recordLocks[request.employeeId]; // Creates if not exists
+        RecordLockInfo& lockInfo = recLocks[request.employeeId];
 
         switch (request.type) {
-        case READ_REQUEST: // [cite: 8]
-            if (lockInfo.isWriteLocked) { // Block if write locked by anyone [cite: 9]
+        case READ_REQUEST:
+            if (lockInfo.isWriteLocked) {
                 response.type = BLOCK_RESPONSE;
-                std::cout << "Server Thread: READ_REQUEST for emp " << request.employeeId << " blocked by write lock held by client " << lockInfo.writerClientId << std::endl;
             }
             else {
                 response.employee = FindEmployee(request.employeeId);
                 if (response.employee.num == -1) {
                     response.type = FAIL_READ;
-                    std::cout << "Server Thread: READ_REQUEST for emp " << request.employeeId << " failed (not found)." << std::endl;
                 }
                 else {
                     response.type = SUCCESS_READ;
-                    lockInfo.readerClientIds.insert(request.clientId); // Add this client to readers
-                    std::cout << "Server Thread: READ_REQUEST for emp " << request.employeeId << " succeeded. Readers: " << lockInfo.readerClientIds.size() << std::endl;
+                    lockInfo.readerClientIds.insert(request.clientId);
                 }
             }
             break;
 
-        case WRITE_REQUEST: // [cite: 7]
-            // Block if write locked by another, or if any read locks exist [cite: 7, 9]
+        case WRITE_REQUEST:
             if (lockInfo.isWriteLocked || !lockInfo.readerClientIds.empty()) {
                 response.type = BLOCK_RESPONSE;
-                std::cout << "Server Thread: WRITE_REQUEST for emp " << request.employeeId << " blocked. Write locked: " << lockInfo.isWriteLocked << ", Readers: " << lockInfo.readerClientIds.size() << std::endl;
             }
             else {
                 response.employee = FindEmployee(request.employeeId);
                 if (response.employee.num == -1) {
                     response.type = FAIL_READ;
-                    std::cout << "Server Thread: WRITE_REQUEST for emp " << request.employeeId << " failed (not found)." << std::endl;
                 }
                 else {
-                    response.type = SUCCESS_READ; // Indicates client can proceed to modify
+                    response.type = SUCCESS_READ;
                     lockInfo.isWriteLocked = true;
                     lockInfo.writerClientId = request.clientId;
-                    std::cout << "Server Thread: WRITE_REQUEST for emp " << request.employeeId << " granted. Write lock acquired by client " << request.clientId << std::endl;
                 }
             }
             break;
@@ -399,82 +320,46 @@ DWORD WINAPI ClientHandlerThread(LPVOID lpParam) {
             if (lockInfo.isWriteLocked && lockInfo.writerClientId == request.clientId) {
                 if (ChangeEmployee(request.employee)) {
                     response.type = SUCCESS;
-                    response.employee = FindEmployee(request.employee.num); // Send back the confirmed state
-                    std::cout << "Server Thread: WRITE_REQUEST_READY for emp " << request.employee.num << " by client " << request.clientId << " succeeded." << std::endl;
+                    response.employee = FindEmployee(request.employee.num);
                 }
                 else {
-                    response.type = FAIL_READ; // Generic fail for write operation
-                    std::cout << "Server Thread: WRITE_REQUEST_READY for emp " << request.employee.num << " by client " << request.clientId << " failed during ChangeEmployee." << std::endl;
+                    response.type = FAIL_READ; 
                 }
-                // Release write lock
                 lockInfo.isWriteLocked = false;
                 lockInfo.writerClientId = -1;
             }
             else {
-                // Client might have lost the lock or was not the owner
-                response.type = BLOCK_RESPONSE; // Or a more specific error type
-                std::cout << "Server Thread: WRITE_REQUEST_READY for emp " << request.employee.num << " by client " << request.clientId << " denied (not lock owner or no lock)." << std::endl;
+                response.type = BLOCK_RESPONSE;
             }
             break;
 
-            // Default case for unknown message types could be added
         default:
-            std::cerr << "Server Thread: Unknown message type " << request.type << " from client " << request.clientId << std::endl;
-            response.type = FAIL_READ; // Generic error
+            response.type = FAIL_READ;
             break;
         }
-        // Unlock guard (automatically by going out of scope)
-        // g_recordLocksMutex.unlock(); // Not needed with lock_guard
-
-        // Send the response to the client
-        fSuccess = WriteFile(
+        WriteFile(
             hPipe,
             &response,
             sizeof(Message),
             &bytesWritten,
             NULL);
 
-        if (!fSuccess) {
-            std::cout << "Server Thread: WriteFile failed for client " << request.clientId << ", GLE=" << GetLastError() << std::endl;
-            clientActive = false; // Assume client exited
-        }
-        else {
-            std::cout << "Server Thread: Sent response type " << response.type << " to client " << request.clientId << std::endl;
-        }
-
-        // Signal the client that it can now read the response it's waiting for
-        // This matches the client's expectation: Write, SetEvent(NeedToRead), WaitFor(ICanRead), Read.
-        // The server thread has Read, Process, Write (above), then SetEvent(YouCanReadNow)
-        if (request.clientId >= 0 && request.clientId < g_numClients && g_pYouCanReadNowEvents && g_pYouCanReadNowEvents[request.clientId]) {
-            SetEvent(g_pYouCanReadNowEvents[request.clientId]);
-        }
-        else {
-            std::cerr << "Server Thread: Invalid client ID " << request.clientId << " or events not initialized for signaling." << std::endl;
-        }
+        SetEvent(YouReadNowEvents[request.clientId]);
     }
 
-    // Client session ended (disconnected or error)
-    // Clean up any locks held by this client
-    std::lock_guard<std::mutex> guard(g_recordLocksMutex);
-    for (auto& pair : g_recordLocks) {
+    lock_guard<mutex> guard(recLocksMutex);
+
+    for (auto& pair : recLocks) {
         RecordLockInfo& lockInfo = pair.second;
-        if (lockInfo.writerClientId == request.clientId) { // Use last known request.clientId if valid
+        if (lockInfo.writerClientId == request.clientId) {
             lockInfo.isWriteLocked = false;
             lockInfo.writerClientId = -1;
-            std::cout << "Server Thread: Cleaned up write lock for emp " << pair.first << " held by client " << request.clientId << std::endl;
         }
         lockInfo.readerClientIds.erase(request.clientId);
-        if (lockInfo.readerClientIds.count(request.clientId)) { // Check before erase
-            lockInfo.readerClientIds.erase(request.clientId);
-            std::cout << "Server Thread: Cleaned up read lock for emp " << pair.first << " held by client " << request.clientId << std::endl;
-        }
     }
-    // g_recordLocksMutex.unlock(); // Not needed with lock_guard
 
-    std::cout << "Server Thread: Handler for client (last known ID: " << request.clientId << ") is terminating. Pipe handle: " << hPipe << std::endl;
-    FlushFileBuffers(hPipe);
     DisconnectNamedPipe(hPipe);
     CloseHandle(hPipe);
-    delete args; // Clean up allocated ClientThreadArgs
+    delete args;
     return 0;
 }
