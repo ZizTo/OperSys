@@ -40,13 +40,13 @@ int main(int argc, char* argv[]) {
     int threadId = atoi(argv[1]);
 
     hNamedPipe = CreateFile(
-        "\\\\.\\pipe\\pipe", // имя канала
-        GENERIC_READ | GENERIC_WRITE, // читаем и записываем в канал
-        FILE_SHARE_READ | FILE_SHARE_WRITE, // разрешаем чтение и запись в канал
-        (LPSECURITY_ATTRIBUTES)NULL, // защита по умолчанию
-        OPEN_EXISTING, // открываем существующий канал
-        FILE_ATTRIBUTE_NORMAL, // атрибуты по умолчанию
-        (HANDLE)NULL // дополнительных атрибутов нет
+        "\\\\.\\pipe\\pipe", // РёРјСЏ РєР°РЅР°Р»Р°
+        GENERIC_READ | GENERIC_WRITE, // С‡РёС‚Р°РµРј Рё Р·Р°РїРёСЃС‹РІР°РµРј РІ РєР°РЅР°Р»
+        FILE_SHARE_READ | FILE_SHARE_WRITE, // СЂР°Р·СЂРµС€Р°РµРј С‡С‚РµРЅРёРµ Рё Р·Р°РїРёСЃСЊ РІ РєР°РЅР°Р»
+        (LPSECURITY_ATTRIBUTES)NULL, // Р·Р°С‰РёС‚Р° РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ
+        OPEN_EXISTING, // РѕС‚РєСЂС‹РІР°РµРј СЃСѓС‰РµСЃС‚РІСѓСЋС‰РёР№ РєР°РЅР°Р»
+        FILE_ATTRIBUTE_NORMAL, // Р°С‚СЂРёР±СѓС‚С‹ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ
+        (HANDLE)NULL // РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹С… Р°С‚СЂРёР±СѓС‚РѕРІ РЅРµС‚
     );
     Message message;
     DWORD dwBytesWrite;
@@ -72,21 +72,21 @@ int main(int argc, char* argv[]) {
             cin >> message.employeeId;
             DWORD dwBytesWrite;
             WriteFile(
-                hNamedPipe, // дескриптор канала
-                &message, // адрес буфера для вывода данных
-                sizeof(Message), // число записываемых байтов
-                &dwBytesWrite, // число записанных байтов
-                (LPOVERLAPPED)NULL // передача данных синхронная
+                hNamedPipe, // РґРµСЃРєСЂРёРїС‚РѕСЂ РєР°РЅР°Р»Р°
+                &message, // Р°РґСЂРµСЃ Р±СѓС„РµСЂР° РґР»СЏ РІС‹РІРѕРґР° РґР°РЅРЅС‹С…
+                sizeof(Message), // С‡РёСЃР»Рѕ Р·Р°РїРёСЃС‹РІР°РµРјС‹С… Р±Р°Р№С‚РѕРІ
+                &dwBytesWrite, // С‡РёСЃР»Рѕ Р·Р°РїРёСЃР°РЅРЅС‹С… Р±Р°Р№С‚РѕРІ
+                (LPOVERLAPPED)NULL // РїРµСЂРµРґР°С‡Р° РґР°РЅРЅС‹С… СЃРёРЅС…СЂРѕРЅРЅР°СЏ
             );
             SetEvent(NeedToRead);
             WaitForSingleObject(ICanRead, INFINITE);
             ResetEvent(ICanRead);
             ReadFile(
-                hNamedPipe, // дескриптор канала
-                &message, // адрес буфера для ввода данных
-                sizeof(Message), // число читаемых байтов
-                &dwBytesWrite, // число прочитанных байтов
-                (LPOVERLAPPED)NULL // передача данных синхронная
+                hNamedPipe, // РґРµСЃРєСЂРёРїС‚РѕСЂ РєР°РЅР°Р»Р°
+                &message, // Р°РґСЂРµСЃ Р±СѓС„РµСЂР° РґР»СЏ РІРІРѕРґР° РґР°РЅРЅС‹С…
+                sizeof(Message), // С‡РёСЃР»Рѕ С‡РёС‚Р°РµРјС‹С… Р±Р°Р№С‚РѕРІ
+                &dwBytesWrite, // С‡РёСЃР»Рѕ РїСЂРѕС‡РёС‚Р°РЅРЅС‹С… Р±Р°Р№С‚РѕРІ
+                (LPOVERLAPPED)NULL // РїРµСЂРµРґР°С‡Р° РґР°РЅРЅС‹С… СЃРёРЅС…СЂРѕРЅРЅР°СЏ
             );
             if (message.type == BLOCK_RESPONSE) {
                 cout << "Blocked" << endl;
@@ -103,21 +103,21 @@ int main(int argc, char* argv[]) {
             cout << "wich id you want: ";
             cin >> message.employeeId;
             WriteFile(
-                hNamedPipe, // дескриптор канала
-                &message, // адрес буфера для вывода данных
-                sizeof(Message), // число записываемых байтов
-                &dwBytesWrite, // число записанных байтов
-                (LPOVERLAPPED)NULL // передача данных синхронная
+                hNamedPipe, // РґРµСЃРєСЂРёРїС‚РѕСЂ РєР°РЅР°Р»Р°
+                &message, // Р°РґСЂРµСЃ Р±СѓС„РµСЂР° РґР»СЏ РІС‹РІРѕРґР° РґР°РЅРЅС‹С…
+                sizeof(Message), // С‡РёСЃР»Рѕ Р·Р°РїРёСЃС‹РІР°РµРјС‹С… Р±Р°Р№С‚РѕРІ
+                &dwBytesWrite, // С‡РёСЃР»Рѕ Р·Р°РїРёСЃР°РЅРЅС‹С… Р±Р°Р№С‚РѕРІ
+                (LPOVERLAPPED)NULL // РїРµСЂРµРґР°С‡Р° РґР°РЅРЅС‹С… СЃРёРЅС…СЂРѕРЅРЅР°СЏ
             );
             SetEvent(NeedToRead);
             WaitForSingleObject(ICanRead, INFINITE);
             ResetEvent(ICanRead);
             ReadFile(
-                hNamedPipe, // дескриптор канала
-                &message, // адрес буфера для ввода данных
-                sizeof(Message), // число читаемых байтов
-                &dwBytesWrite, // число прочитанных байтов
-                (LPOVERLAPPED)NULL // передача данных синхронная
+                hNamedPipe, // РґРµСЃРєСЂРёРїС‚РѕСЂ РєР°РЅР°Р»Р°
+                &message, // Р°РґСЂРµСЃ Р±СѓС„РµСЂР° РґР»СЏ РІРІРѕРґР° РґР°РЅРЅС‹С…
+                sizeof(Message), // С‡РёСЃР»Рѕ С‡РёС‚Р°РµРјС‹С… Р±Р°Р№С‚РѕРІ
+                &dwBytesWrite, // С‡РёСЃР»Рѕ РїСЂРѕС‡РёС‚Р°РЅРЅС‹С… Р±Р°Р№С‚РѕРІ
+                (LPOVERLAPPED)NULL // РїРµСЂРµРґР°С‡Р° РґР°РЅРЅС‹С… СЃРёРЅС…СЂРѕРЅРЅР°СЏ
             );
             if (message.type == BLOCK_RESPONSE) {
                 cout << "Blocked" << endl;
@@ -131,21 +131,21 @@ int main(int argc, char* argv[]) {
                 message.type = WRITE_REQUEST_READY;
                 message.id = threadId;
                 WriteFile(
-                    hNamedPipe, // дескриптор канала
-                    &message, // адрес буфера для вывода данных
-                    sizeof(Message), // число записываемых байтов
-                    &dwBytesWrite, // число записанных байтов
-                    (LPOVERLAPPED)NULL // передача данных синхронная
+                    hNamedPipe, // РґРµСЃРєСЂРёРїС‚РѕСЂ РєР°РЅР°Р»Р°
+                    &message, // Р°РґСЂРµСЃ Р±СѓС„РµСЂР° РґР»СЏ РІС‹РІРѕРґР° РґР°РЅРЅС‹С…
+                    sizeof(Message), // С‡РёСЃР»Рѕ Р·Р°РїРёСЃС‹РІР°РµРјС‹С… Р±Р°Р№С‚РѕРІ
+                    &dwBytesWrite, // С‡РёСЃР»Рѕ Р·Р°РїРёСЃР°РЅРЅС‹С… Р±Р°Р№С‚РѕРІ
+                    (LPOVERLAPPED)NULL // РїРµСЂРµРґР°С‡Р° РґР°РЅРЅС‹С… СЃРёРЅС…СЂРѕРЅРЅР°СЏ
                 );
                 SetEvent(NeedToRead);
                 WaitForSingleObject(ICanRead, INFINITE);
                 ResetEvent(ICanRead);
                 ReadFile(
-                    hNamedPipe, // дескриптор канала
-                    &message, // адрес буфера для ввода данных
-                    sizeof(Message), // число читаемых байтов
-                    &dwBytesWrite, // число прочитанных байтов
-                    (LPOVERLAPPED)NULL // передача данных синхронная
+                    hNamedPipe, // РґРµСЃРєСЂРёРїС‚РѕСЂ РєР°РЅР°Р»Р°
+                    &message, // Р°РґСЂРµСЃ Р±СѓС„РµСЂР° РґР»СЏ РІРІРѕРґР° РґР°РЅРЅС‹С…
+                    sizeof(Message), // С‡РёСЃР»Рѕ С‡РёС‚Р°РµРјС‹С… Р±Р°Р№С‚РѕРІ
+                    &dwBytesWrite, // С‡РёСЃР»Рѕ РїСЂРѕС‡РёС‚Р°РЅРЅС‹С… Р±Р°Р№С‚РѕРІ
+                    (LPOVERLAPPED)NULL // РїРµСЂРµРґР°С‡Р° РґР°РЅРЅС‹С… СЃРёРЅС…СЂРѕРЅРЅР°СЏ
                 );
                 if (message.type = SUCCESS) {
                     DisplayEmployee(message.employee);
