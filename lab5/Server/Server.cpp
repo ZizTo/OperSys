@@ -179,9 +179,12 @@ int main() {
             continue;
         }
         
-        // Create the client process
-        string commLine = "Client98.exe " + to_string(i);
-        if (!CreateProcess(NULL, strdup(commLine.c_str()), NULL, NULL, FALSE,
+        // Create the client process - IMPORTANT: Make sure the client executable name matches exactly
+        // Note: The client executable should be in the current directory or use full path
+        string commLine = "Client.exe " + to_string(i);  // Changed from Client98.exe to Client.exe
+        cout << "Launching: " << commLine << endl;
+        
+        if (!CreateProcess(NULL, (LPSTR)commLine.c_str(), NULL, NULL, FALSE,
                           CREATE_NEW_CONSOLE, NULL, NULL, &siv[i], &piv[i])) {
             cerr << "CreateProcess failed for client " << i << ". Error: " << GetLastError() << endl;
             CloseHandle(hPipes[i]);
@@ -191,9 +194,12 @@ int main() {
         // Wait for the client to connect to the pipe
         cout << "Waiting for client " << i << " to connect..." << endl;
         if (!ConnectNamedPipe(hPipes[i], NULL)) {
-            cerr << "ConnectNamedPipe failed for client " << i << ". Error: " << GetLastError() << endl;
-            CloseHandle(hPipes[i]);
-            continue;
+            DWORD error = GetLastError();
+            if (error != ERROR_PIPE_CONNECTED) {  // Ignore if already connected
+                cerr << "ConnectNamedPipe failed for client " << i << ". Error: " << error << endl;
+                CloseHandle(hPipes[i]);
+                continue;
+            }
         }
         
         cout << "Client " << i << " connected successfully." << endl;
