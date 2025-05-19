@@ -5,14 +5,16 @@
 #include <fstream>
 #include <string>
 
-using namepsace std;
+using namespace std;
 
-string binfl;
+string binFl;
 
 vector<STARTUPINFO> siv;
 vector<PROCESS_INFORMATION> piv;
 HANDLE NeedToRead;
-vector<HANDLE> hNamedPipev;
+HANDLE hNamedPipe;
+HANDLE* YouCanReadNow;
+HANDLE* AllDead;
 
 void CleanUp() {
     for (auto pi : piv) {
@@ -20,8 +22,6 @@ void CleanUp() {
         CloseHandle(pi.hProcess);
 	}
 	CloseHandle(NeedToRead);
-	CloseHandle(hNamedPipe);
-	CloseHandle(LockedSlot);
 }
 
 void DisplayEmployeeFile() {
@@ -30,9 +30,9 @@ void DisplayEmployeeFile() {
     cout << "\nGuys:\n";
     while (!file.eof()) {
         file.read(reinterpret_cast<char*>(&data), sizeof(data));
-        cout << "Employee#" << employees[i].num << " - "
-            << employees[i].name << " - "
-            << employees[i].hours << endl;
+        cout << "Employee#" << data.num << " - "
+            << data.name << " - "
+            << data.hours << endl;
     }
 
     cout << endl;
@@ -40,15 +40,34 @@ void DisplayEmployeeFile() {
     file.close();
 }
 
+Employee FindEmployee(int id) {
+    ifstream file(binFl, ios::binary);
+    Employee data;
+    while (!file.eof()) {
+        file.read(reinterpret_cast<char*>(&data), sizeof(data));
+        if (data.num == id) {
+            file.close();
+            return data;
+        }
+    }
+
+    file.close();
+    data.num = -1;
+    return data;
+}
+
+void ChangeEmployee(int id, Employee emp) {
+
+}
 
 int main() {
 	cout << "Enter file name: ";
-	cin >> binfl;
+	cin >> binFl;
 	int count;
     cout << "Enter number of employees: ";
     cin >> count;
 
-	ofstream onF(binfl, ios::binary);
+	ofstream onF(binFl, ios::binary);
 
     for (int i = 0; i < count; i++)
 	{
@@ -74,47 +93,132 @@ int main() {
     cin >> ClKol;
     piv.resize(ClKol);
     siv.resize(ClKol);
+
     for (auto si : siv) {
         ZeroMemory(&si, sizeof(STARTUPINFO));
         si.cb = sizeof(STARTUPINFO);
     }
-    string commLine = "Client98.exe";
+
+    hNamedPipe = CreateNamedPipe(
+        "\\\\.\\pipe\\pipe", // имя канала
+        PIPE_ACCESS_DUPLEX, // читаем из канала
+        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+        PIPE_UNLIMITED_INSTANCES, // максимальное количество экземпляров канала
+        0, // размер выходного буфера по умолчанию
+        0, // размер входного буфера по умолчанию
+        INFINITE, // клиент ждет связь бесконечно долго
+        (LPSECURITY_ATTRIBUTES)NULL
+    );
+
+    string commLine = "Client98.exe ";
     for (int i = 0; i < ClKol; i++)
     {
-        hNamedPipev[i]=CreateNamedPipe(
-            "\\\\.\\pipe\\demo_pipe", // имя канала
-            PIPE_ACCESS_DUPLEX, // читаем из канала
-            PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-            PIPE_UNLIMITED_INSTANCES, // максимальное количество экземпляров канала
-            0, // размер выходного буфера по умолчанию
-            0, // размер входного буфера по умолчанию
-            INFINITE, // клиент ждет связь бесконечно долго
-            (LPSECURITY_ATTRIBUTES)NULL
-        );
-        CreateProcess(NULL, strdup((commLine).c_str()), NULL, NULL, FALSE,
+        cout << "2";
+        CreateProcess(NULL, strdup((commLine + to_string(i)).c_str()), NULL, NULL, FALSE,
 			CREATE_NEW_CONSOLE, NULL, NULL, &siv[i], &piv[i]);
-        BOOL ConnectNamedPipe (
-            hNamedPipev[i], // дескриптор канала
-            (LPOVERLAPPED)None // асинхронная связь
-            );
+        cout << "3";
+        if (ConnectNamedPipe(
+            hNamedPipe, // дескриптор канала
+            (LPOVERLAPPED)NULL // асинхронная связь
+        )) {
+            cout << "all cool";
+        }
     }
+    
 
     bool readOpen = true, modificOpen = true;
     NeedToRead = CreateEvent(NULL, false, false, "ReadEvent");
+    HANDLE* AllDead = new HANDLE[ClKol];
+    for (int i = 0; i < ClKol; i++)
+    {
+        AllDead[i] = CreateEvent(NULL, false, false, "Dead" + i);
+    }
+    YouCanReadNow = new HANDLE[ClKol];
+    for (int i = 0; i < ClKol; i++)
+    {
+        YouCanReadNow[i] = CreateEvent(NULL, false, false, "Read" + i);
+    }
+
     while (true) {
-        if (WaitForMultipleObjects(ClKol, piv.hThread, TRUE, 0) != WAIT_TIMEOUT) {
+        if (WaitForMultipleObjects(ClKol, AllDead, TRUE, 0) != WAIT_TIMEOUT) {
             break;
         } 
 
-        if (WaitForSingleObject(NeedToRead) != WAIT_TIMEOUT) {
-            
+        if (WaitForSingleObject(NeedToRead, 0) != WAIT_TIMEOUT) {
+            ResetEvent(NeedToRead);
+            DWORD dwBytesRead;
+            DWORD dwBytesWrite;
+            Message message;
+            ReadFile(
+                hNamedPipe, // дескриптор канала
+                &message, // адрес буфера для ввода данных
+                sizeof(Message), // число читаемых байтов
+                &dwBytesRead, // число прочитанных байтов
+                (LPOVERLAPPED)NULL // передача данных синхронная
+            );
+
+            Message answ;
+
+            switch (message.type) {
+            case READ_REQUEST:
+                if (readOpen) {
+                    answ.employee = FindEmployee(message.employeeId);
+                    if (answ.employee.num == -1) {
+                        answ.type = FAIL_READ;
+                    }
+                    else {
+                        answ.type = SUCCESS_READ;
+                    }
+                }
+                else {
+                    answ.type = BLOCK_RESPONSE;
+                }
+                break;
+            case WRITE_REQUEST:
+                if (modificOpen) {
+                    answ.employee = FindEmployee(message.employeeId);
+                    if (answ.employee.num == -1) {
+                        answ.type = FAIL_READ;
+                    }
+                    else {
+                        readOpen = false;
+                        modificOpen = false;
+                        answ.type = SUCCESS_READ;
+                    }
+                }
+                else {
+                    answ.type = BLOCK_RESPONSE;
+                }
+                break;
+            case WRITE_REQUEST_READY:
+                ChangeEmployee(message.employee.num, message.employee);
+                answ.type = SUCCESS;
+                message.employee = FindEmployee(message.employeeId);
+                readOpen = true;
+                modificOpen = true;
+                break;
+
+            default:
+                cerr << "err";
+                return 1;
+                break;
+            }
+
+            WriteFile(
+                hNamedPipe, // дескриптор канала
+                &answ, // адрес буфера для вывода данных
+                sizeof(Message), // число записываемых байтов
+                &dwBytesWrite, // число записанных байтов
+                (LPOVERLAPPED)NULL // передача данных синхронная
+            );
+
+            SetEvent(YouCanReadNow[message.id]);
         }
     }
-
-    
     
     char a;
     DisplayEmployeeFile();
     cout << "Enter to close";
-    cin >> a
+    cin >> a;
+    CleanUp();
 }

@@ -1,348 +1,224 @@
+#include "structs.h"
+#include <vector>
 #include <windows.h>
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <vector>
-#include "structs.h"
 
 using namespace std;
 
-vector<Employee> employees;
-vector<RecordLock> locks;
+string binFl;
 
-vector<HANDLE> pi;
-vector<HANDLE> hi
-string fileName;
-HANDLE hPipe;
-bool serverRunning = true;
+vector<STARTUPINFO> siv;
+vector<PROCESS_INFORMATION> piv;
+HANDLE NeedToRead;
+HANDLE hNamedPipe;
+HANDLE* YouCanReadNow;
+HANDLE* AllDead;
 
-int FindEmployeeById(int id) {
-    for (size_t i = 0; i < employees.size(); i++) {
-        if (employees[i].num == id) {
-            return (int)i;
-        }
-    }
-    return -1;
+void CleanUp() {
+    for (auto pi : piv) {
+		CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+	}
+	CloseHandle(NeedToRead);
 }
 
-void Cleanup() {
-    for (size_t i = 0; i < locks.size(); i++) {
-        CloseHandle(locks[i].mutex);
-
-    }
-    CloseHandle()
-}
-
-
-RecordLock* FindOrCreateLock(int employeeId) {
-    for (size_t i = 0; i < locks.size(); i++) {
-        if (locks[i].employeeId == employeeId) {
-            return &locks[i];
-        }
+void DisplayEmployeeFile() {
+    ifstream file(binFl, ios::binary);
+    Employee data;
+    cout << "\nGuys:\n";
+    while (!file.eof()) {
+        file.read(reinterpret_cast<char*>(&data), sizeof(data));
+        cout << "Employee#" << data.num << " - "
+            << data.name << " - "
+            << data.hours << endl;
     }
 
-    // If not found, create new lock
-    RecordLock lock;
-    lock.employeeId = employeeId;
-    lock.state = UNLOCKED;
-    lock.readCount = 0;
-    lock.mutex = CreateMutex(NULL, FALSE, NULL);
-    locks.push_back(lock);
-
-    return &locks[locks.size() - 1];
-}
-
-void CreateEmployeeFile() {
-    ofstream file(fileName.c_str(), ios::binary);
-    if (!file) {
-        cerr << "Failed to create file!" << endl;
-        exit(1);
-    }
-
-    int count;
-    cout << "Enter number of employees: ";
-    cin >> count;
-
-    for (int i = 0; i < count; i++) {
-        Employee emp;
-        cout << "Employee #" << (i + 1) << " ID: ";
-        cin >> emp.num;
-        cout << "Employee #" << (i + 1) << " Name: ";
-        cin >> emp.name;
-        cout << "Employee #" << (i + 1) << " Hours: ";
-        cin >> emp.hours;
-
-        employees.push_back(emp);
-        file.write(reinterpret_cast<char*>(&emp), sizeof(Employee));
-    }
+    cout << endl;
 
     file.close();
 }
 
-void DisplayEmployeeFile() {
-    cout << "Employee File Content:" << endl;
-
-    for (size_t i = 0; i < employees.size(); i++) {
-        cout << employees[i].num << " - "
-            << employees[i].name << " - "
-            << employees[i].hours << endl;
+Employee FindEmployee(int id) {
+    ifstream file(binFl, ios::binary);
+    Employee data;
+    while (!file.eof()) {
+        file.read(reinterpret_cast<char*>(&data), sizeof(data));
+        if (data.num == id) {
+            file.close();
+            return data;
+        }
     }
-    cout << endl;
+
+    file.close();
+    data.num = -1;
+    return data;
 }
 
-DWORD WINAPI ClientHandler(LPVOID lpParam) {
-    HANDLE hPipe = (HANDLE)lpParam;
-    Message message;
-    DWORD bytesRead, bytesWritten;
+void ChangeEmployee(int id, Employee emp) {
 
-    while (true) {
-        // Read client message
-        if (!ReadFile(hPipe, &message, sizeof(Message), &bytesRead, NULL) || bytesRead == 0) {
-            break;
-        }
-
-        switch (message.type) {
-        case READ_REQUEST: {
-            // Handle read request
-            int index = FindEmployeeById(message.employeeId);
-            RecordLock* lock = FindOrCreateLock(message.employeeId);
-
-            // Wait for mutex
-            WaitForSingleObject(lock->mutex, INFINITE);
-
-            if (index != -1 && (lock->state == UNLOCKED || lock->state == READ_LOCKED)) {
-                // Acquire read lock
-                lock->state = READ_LOCKED;
-                lock->readCount++;
-
-                // Release mutex
-                ReleaseMutex(lock->mutex);
-
-                // Send success response with employee data
-                message.type = READ_RESPONSE;
-                message.employee = employees[index];
-                WriteFile(hPipe, &message, sizeof(Message), &bytesWritten, NULL);
-            }
-            else {
-                // Release mutex
-                ReleaseMutex(lock->mutex);
-
-                // Send error response
-                message.type = ERROR_RESPONSE;
-                WriteFile(hPipe, &message, sizeof(Message), &bytesWritten, NULL);
-            }
-            break;
-        }
-        case WRITE_REQUEST: {
-            // Handle write request
-            int index = FindEmployeeById(message.employeeId);
-            RecordLock* lock = FindOrCreateLock(message.employeeId);
-
-            // Wait for mutex
-            WaitForSingleObject(lock->mutex, INFINITE);
-
-            if (index != -1 && lock->state == UNLOCKED) {
-                // Acquire write lock
-                lock->state = WRITE_LOCKED;
-
-                // Release mutex
-                ReleaseMutex(lock->mutex);
-
-                // Send success response with employee data
-                message.type = WRITE_RESPONSE;
-                message.employee = employees[index];
-                WriteFile(hPipe, &message, sizeof(Message), &bytesWritten, NULL);
-            }
-            else {
-                // Release mutex
-                ReleaseMutex(lock->mutex);
-
-                // Send error response
-                message.type = ERROR_RESPONSE;
-                WriteFile(hPipe, &message, sizeof(Message), &bytesWritten, NULL);
-            }
-            break;
-        }
-        case WRITE_RESPONSE: {
-            // Handle write response (update record)
-            int index = FindEmployeeById(message.employeeId);
-
-            if (index != -1) {
-                // Update employee record
-                employees[index] = message.employee;
-
-                // Write updated records to file
-                ofstream file(fileName.c_str(), ios::binary);
-                for (size_t i = 0; i < employees.size(); i++) {
-                    file.write(reinterpret_cast<char*>(&employees[i]), sizeof(Employee));
-                }
-                file.close();
-
-                // Send success response
-                message.type = SUCCESS_RESPONSE;
-                WriteFile(hPipe, &message, sizeof(Message), &bytesWritten, NULL);
-            }
-            else {
-                // Send error response
-                message.type = ERROR_RESPONSE;
-                WriteFile(hPipe, &message, sizeof(Message), &bytesWritten, NULL);
-            }
-            break;
-        }
-        case UNLOCK_REQUEST: {
-            // Handle unlock request
-            RecordLock* lock = FindOrCreateLock(message.employeeId);
-
-            // Wait for mutex
-            WaitForSingleObject(lock->mutex, INFINITE);
-
-            if (lock->state == READ_LOCKED) {
-                lock->readCount--;
-                if (lock->readCount == 0) {
-                    lock->state = UNLOCKED;
-                }
-            }
-            else if (lock->state == WRITE_LOCKED) {
-                lock->state = UNLOCKED;
-            }
-
-            // Release mutex
-            ReleaseMutex(lock->mutex);
-
-            // Send success response
-            message.type = SUCCESS_RESPONSE;
-            WriteFile(hPipe, &message, sizeof(Message), &bytesWritten, NULL);
-            break;
-        }
-        default:
-            break;
-        }
-    }
-
-    DisconnectNamedPipe(hPipe);
-    return 0;
-}
-
-void StartServer(int clientCount) {
-    for (size_t i = 0; i < employees.size(); i++) {
-        RecordLock lock;
-        lock.employeeId = employees[i].num;
-        lock.state = UNLOCKED;
-        lock.readCount = 0;
-        lock.mutex = CreateMutex(NULL, FALSE, NULL);
-        locks.push_back(lock);
-    }
-
-    HANDLE hPipe = CreateNamedPipe(
-        "\\\\.\\pipe\\EmployeeServer",
-        PIPE_ACCESS_DUPLEX,
-        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-        PIPE_UNLIMITED_INSTANCES,
-        sizeof(Message),
-        sizeof(Message),
-        0,
-        NULL);
-
-    if (hPipe == INVALID_HANDLE_VALUE) {
-        cerr << "CreateNamedPipe failed: " << GetLastError() << endl;
-        return;
-    }
-
-    cout << "Server started. Launching client processes...\n";
-
-    for (int i = 0; i < clientCount; i++) {
-        STARTUPINFO si;
-        PROCESS_INFORMATION pi;
-
-        ZeroMemory(&si, sizeof(si));
-        si.cb = sizeof(si);
-        ZeroMemory(&pi, sizeof(pi));
-
-        if (!CreateProcess(
-            "Client98.exe",  // Client executable name
-            NULL,          // Command line
-            NULL,          // Process handle not inheritable
-            NULL,          // Thread handle not inheritable
-            FALSE,         // Set handle inheritance to FALSE
-            0,             // No creation flags
-            NULL,          // Use parent's environment block
-            NULL,          // Use parent's starting directory
-            &si,           // Pointer to STARTUPINFO structure
-            &pi)           // Pointer to PROCESS_INFORMATION structure
-            ) {
-            cerr << "CreateProcess failed: " << GetLastError() << endl;
-            continue;
-        }
-
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-    }
-
-    while (serverRunning) {
-        cout << "Waiting for client connection..." << endl;
-
-        if (ConnectNamedPipe(hPipe, NULL) || GetLastError() == ERROR_PIPE_CONNECTED) {
-            cout << "Client connected." << endl;
-
-            // Create thread to handle client
-            HANDLE hThread = CreateThread(
-                NULL,                   // Default security attributes
-                0,                      // Default stack size
-                ClientHandler,          // Thread function
-                (LPVOID)hPipe,          // Parameter to thread function
-                0,                      // Default creation flags
-                NULL);                  // Thread identifier
-
-            if (hThread == NULL) {
-                cerr << "CreateThread failed: " << GetLastError() << endl;
-                DisconnectNamedPipe(hPipe);
-                continue;
-            }
-
-            CloseHandle(hThread);
-
-            // Create a new pipe instance for the next client
-            hPipe = CreateNamedPipe(
-                "\\\\.\\pipe\\EmployeeServer",
-                PIPE_ACCESS_DUPLEX,
-                PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-                PIPE_UNLIMITED_INSTANCES,
-                sizeof(Message),
-                sizeof(Message),
-                0,
-                NULL);
-
-            if (hPipe == INVALID_HANDLE_VALUE) {
-                cerr << "CreateNamedPipe failed: " << GetLastError() << endl;
-                break;
-            }
-        }
-    }
-
-    CloseHandle(hPipe);
 }
 
 int main() {
-    int clientCount;
+	cout << "Enter file name: ";
+	cin >> binFl;
+	int count;
+    cout << "Enter number of employees: ";
+    cin >> count;
 
-    cout << "Enter file name: ";
-    cin >> fileName;
+	ofstream onF(binFl, ios::binary);
 
-    CreateEmployeeFile();
+    for (int i = 0; i < count; i++)
+	{
+        Employee data;
+        data.num = i;
+
+        cout << "Enter name: ";
+        string messageStr;
+        cin >> messageStr;
+        strncpy_s(data.name, messageStr.c_str(), sizeof(data.name) - 1);
+
+        cout << "Enter hours: ";
+        cin >> data.hours;
+        
+		onF.write(reinterpret_cast<char*>(&data), sizeof(data));
+	}
+
+    onF.close();
     DisplayEmployeeFile();
 
-    cout << "Enter number of client processes to launch: ";
-    cin >> clientCount;
+    cout << "Client kol: ";
+    int ClKol;
+    cin >> ClKol;
+    piv.resize(ClKol);
+    siv.resize(ClKol);
 
-    StartServer(clientCount);
+    for (auto si : siv) {
+        ZeroMemory(&si, sizeof(STARTUPINFO));
+        si.cb = sizeof(STARTUPINFO);
+    }
 
-    // After all clients finish
+    hNamedPipe = CreateNamedPipe(
+        "\\\\.\\pipe\\pipe", // имя канала
+        PIPE_ACCESS_DUPLEX, // читаем из канала
+        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+        PIPE_UNLIMITED_INSTANCES, // максимальное количество экземпляров канала
+        0, // размер выходного буфера по умолчанию
+        0, // размер входного буфера по умолчанию
+        INFINITE, // клиент ждет связь бесконечно долго
+        (LPSECURITY_ATTRIBUTES)NULL
+    );
+
+    string commLine = "Client98.exe ";
+    for (int i = 0; i < ClKol; i++)
+    {
+        cout << "2";
+        CreateProcess(NULL, strdup((commLine + to_string(i)).c_str()), NULL, NULL, FALSE,
+			CREATE_NEW_CONSOLE, NULL, NULL, &siv[i], &piv[i]);
+        cout << "3";
+        if (ConnectNamedPipe(
+            hNamedPipe, // дескриптор канала
+            (LPOVERLAPPED)NULL // асинхронная связь
+        )) {
+            cout << "all cool";
+        }
+    }
+    
+
+    bool readOpen = true, modificOpen = true;
+    NeedToRead = CreateEvent(NULL, false, false, "ReadEvent");
+    HANDLE* AllDead = new HANDLE[ClKol];
+    for (int i = 0; i < ClKol; i++)
+    {
+        AllDead[i] = CreateEvent(NULL, false, false, "Dead" + i);
+    }
+    YouCanReadNow = new HANDLE[ClKol];
+    for (int i = 0; i < ClKol; i++)
+    {
+        YouCanReadNow[i] = CreateEvent(NULL, false, false, "Read" + i);
+    }
+
+    while (true) {
+        if (WaitForMultipleObjects(ClKol, AllDead, TRUE, 0) != WAIT_TIMEOUT) {
+            break;
+        } 
+
+        if (WaitForSingleObject(NeedToRead, 0) != WAIT_TIMEOUT) {
+            ResetEvent(NeedToRead);
+            DWORD dwBytesRead;
+            DWORD dwBytesWrite;
+            Message message;
+            ReadFile(
+                hNamedPipe, // дескриптор канала
+                &message, // адрес буфера для ввода данных
+                sizeof(Message), // число читаемых байтов
+                &dwBytesRead, // число прочитанных байтов
+                (LPOVERLAPPED)NULL // передача данных синхронная
+            );
+
+            Message answ;
+
+            switch (message.type) {
+            case READ_REQUEST:
+                if (readOpen) {
+                    answ.employee = FindEmployee(message.employeeId);
+                    if (answ.employee.num == -1) {
+                        answ.type = FAIL_READ;
+                    }
+                    else {
+                        answ.type = SUCCESS_READ;
+                    }
+                }
+                else {
+                    answ.type = BLOCK_RESPONSE;
+                }
+                break;
+            case WRITE_REQUEST:
+                if (modificOpen) {
+                    answ.employee = FindEmployee(message.employeeId);
+                    if (answ.employee.num == -1) {
+                        answ.type = FAIL_READ;
+                    }
+                    else {
+                        readOpen = false;
+                        modificOpen = false;
+                        answ.type = SUCCESS_READ;
+                    }
+                }
+                else {
+                    answ.type = BLOCK_RESPONSE;
+                }
+                break;
+            case WRITE_REQUEST_READY:
+                ChangeEmployee(message.employee.num, message.employee);
+                answ.type = SUCCESS;
+                message.employee = FindEmployee(message.employeeId);
+                readOpen = true;
+                modificOpen = true;
+                break;
+
+            default:
+                cerr << "err";
+                return 1;
+                break;
+            }
+
+            WriteFile(
+                hNamedPipe, // дескриптор канала
+                &answ, // адрес буфера для вывода данных
+                sizeof(Message), // число записываемых байтов
+                &dwBytesWrite, // число записанных байтов
+                (LPOVERLAPPED)NULL // передача данных синхронная
+            );
+
+            SetEvent(YouCanReadNow[message.id]);
+        }
+    }
+    
+    char a;
     DisplayEmployeeFile();
-
-    cout << "Press Enter to exit...";
-    cin.ignore();
-    cin.get();
-
-    CleanupLocks();
-    return 0;
+    cout << "Enter to close";
+    cin >> a;
+    CleanUp();
 }
