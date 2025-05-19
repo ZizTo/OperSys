@@ -12,14 +12,14 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
-add_executable(Client98 Client/Clinet.cpp)
+add_executable(Client98 Client/Client.cpp)
 target_include_directories(Client98
 	PRIVATE 
 		${CMAKE_CURRENT_SOURCE_DIR}/Client 
 		${CMAKE_CURRENT_SOURCE_DIR}/data
 )
 
-add_executable(Server98 Server/Server.cpp)
+add_executable(Server98 Server/Seeerver.cpp)
 target_include_directories(Server98
 	PRIVATE 
 		${CMAKE_CURRENT_SOURCE_DIR}/Server 
