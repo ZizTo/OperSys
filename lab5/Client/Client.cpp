@@ -6,17 +6,6 @@
 #include <string>
 
 using namespace std;
-HANDLE hNamedPipe;
-HANDLE NeedToRead;
-HANDLE ICanRead;
-HANDLE IDead;
-
-void CleanUp() {
-    CloseHandle(NeedToRead);
-    CloseHandle(ICanRead);
-    CloseHandle(IDead);
-    CloseHandle(hNamedPipe);
-}
 
 void DisplayEmployee(Employee emp) {
     cout << "Employee#" << emp.num << " - "
@@ -36,105 +25,62 @@ Employee ModifyEmployee(Employee data) {
     return data;
 }
 
-int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        cerr << "Usage: " << argv[0] << " <client_id>" << endl;
-        return 1;
-    }
-    
-    int threadId = atoi(argv[1]);
-    
-    // Create a unique pipe name based on the client ID
-    string pipeName = "\\\\.\\pipe\\pipe" + to_string(threadId);
-    
-    hNamedPipe = CreateFile(
-        pipeName.c_str(),  // unique pipe name for this client
-        GENERIC_READ | GENERIC_WRITE, // read and write access
-        FILE_SHARE_READ | FILE_SHARE_WRITE, // share read and write
-        (LPSECURITY_ATTRIBUTES)NULL, // default security
-        OPEN_EXISTING, // open existing pipe
-        FILE_ATTRIBUTE_NORMAL, // default attributes
-        (HANDLE)NULL // no template file
+int main() {
+    // Connect to the server's pipe with simplified name
+    HANDLE hPipe = CreateFile(
+        "\\\\.\\pipe\\EmployeePipe",  // simplified pipe name
+        GENERIC_READ | GENERIC_WRITE, // read/write access
+        0,                            // no sharing
+        NULL,                         // default security
+        OPEN_EXISTING,                // open existing pipe
+        0,                            // default attributes
+        NULL                          // no template file
     );
     
-    if (hNamedPipe == INVALID_HANDLE_VALUE) {
-        cerr << "Failed to connect to pipe. Error: " << GetLastError() << endl;
+    if (hPipe == INVALID_HANDLE_VALUE) {
+        cout << "Failed to connect to pipe. Error: " << GetLastError() << endl;
+        cout << "Make sure the server is running first!" << endl;
+        cout << "Press Enter to exit...";
+        cin.get();
         return 1;
     }
     
-    Message message;
-    DWORD dwBytesWrite;
-    DWORD dwBytesRead;
+    cout << "Connected to server!" << endl;
     
-    // Create unique event names based on client ID
-    string readEventName = "ReadEvent" + to_string(threadId);
-    string responseEventName = "Read" + to_string(threadId);
-    string deadEventName = "Dead" + to_string(threadId);
-    
-    NeedToRead = OpenEvent(EVENT_ALL_ACCESS, FALSE, readEventName.c_str());
-    if (!NeedToRead) {
-        cerr << "Failed to open " << readEventName << ". Error: " << GetLastError() << endl;
-        CloseHandle(hNamedPipe);
-        return 1;
-    }
-    
-    ICanRead = OpenEvent(EVENT_ALL_ACCESS, FALSE, responseEventName.c_str());
-    if (!ICanRead) {
-        cerr << "Failed to open " << responseEventName << ". Error: " << GetLastError() << endl;
-        CloseHandle(NeedToRead);
-        CloseHandle(hNamedPipe);
-        return 1;
-    }
-    
-    IDead = OpenEvent(EVENT_ALL_ACCESS, FALSE, deadEventName.c_str());
-    if (!IDead) {
-        cerr << "Failed to open " << deadEventName << ". Error: " << GetLastError() << endl;
-        CloseHandle(NeedToRead);
-        CloseHandle(ICanRead);
-        CloseHandle(hNamedPipe);
-        return 1;
-    }
-    
-    cout << "Client " << threadId << " connected successfully." << endl;
-    
+    // Main client loop
     while (true) {
         cout << "q - exit, r - read, s - send: ";
         char choose;
         cin >> choose;
         
-        switch (choose) {
-        case 'q':
-            SetEvent(IDead);
-            CleanUp();
-            cout << "Exiting client." << endl;
-            return 0;
-
-        case 'r':
-            message.id = threadId;
+        if (choose == 'q') {
+            // Exit the program
+            break;
+        }
+        
+        DWORD bytesWritten, bytesRead;
+        Message message;
+        message.id = 0;  // Just use 0 as the client ID in simplified version
+        
+        if (choose == 'r') {
+            // Read an employee record
             message.type = READ_REQUEST;
             cout << "Enter employee ID you want to read: ";
             cin >> message.employeeId;
             
-            WriteFile(
-                hNamedPipe, // pipe handle
-                &message, // buffer for output
-                sizeof(Message), // bytes to write
-                &dwBytesWrite, // bytes written
-                (LPOVERLAPPED)NULL // synchronous write
-            );
+            // Send request to server
+            if (!WriteFile(hPipe, &message, sizeof(Message), &bytesWritten, NULL)) {
+                cerr << "WriteFile failed. Error: " << GetLastError() << endl;
+                break;
+            }
             
-            SetEvent(NeedToRead);
-            WaitForSingleObject(ICanRead, INFINITE);
-            ResetEvent(ICanRead);
+            // Read response from server
+            if (!ReadFile(hPipe, &message, sizeof(Message), &bytesRead, NULL)) {
+                cerr << "ReadFile failed. Error: " << GetLastError() << endl;
+                break;
+            }
             
-            ReadFile(
-                hNamedPipe, // pipe handle
-                &message, // buffer for input
-                sizeof(Message), // bytes to read
-                &dwBytesRead, // bytes read
-                (LPOVERLAPPED)NULL // synchronous read
-            );
-            
+            // Process response
             if (message.type == BLOCK_RESPONSE) {
                 cout << "Access blocked - record is being modified." << endl;
             }
@@ -145,34 +91,26 @@ int main(int argc, char* argv[]) {
                 cout << "Record found:" << endl;
                 DisplayEmployee(message.employee);
             }
-            break;
-            
-        case 's':
-            message.id = threadId;
+        }
+        else if (choose == 's') {
+            // Modify an employee record
             message.type = WRITE_REQUEST;
             cout << "Enter employee ID you want to modify: ";
             cin >> message.employeeId;
             
-            WriteFile(
-                hNamedPipe, // pipe handle
-                &message, // buffer for output
-                sizeof(Message), // bytes to write
-                &dwBytesWrite, // bytes written
-                (LPOVERLAPPED)NULL // synchronous write
-            );
+            // Send request to server
+            if (!WriteFile(hPipe, &message, sizeof(Message), &bytesWritten, NULL)) {
+                cerr << "WriteFile failed. Error: " << GetLastError() << endl;
+                break;
+            }
             
-            SetEvent(NeedToRead);
-            WaitForSingleObject(ICanRead, INFINITE);
-            ResetEvent(ICanRead);
+            // Read response from server
+            if (!ReadFile(hPipe, &message, sizeof(Message), &bytesRead, NULL)) {
+                cerr << "ReadFile failed. Error: " << GetLastError() << endl;
+                break;
+            }
             
-            ReadFile(
-                hNamedPipe, // pipe handle
-                &message, // buffer for input
-                sizeof(Message), // bytes to read
-                &dwBytesRead, // bytes read
-                (LPOVERLAPPED)NULL // synchronous read
-            );
-            
+            // Process response
             if (message.type == BLOCK_RESPONSE) {
                 cout << "Access blocked - record is already being accessed." << endl;
             }
@@ -186,27 +124,18 @@ int main(int argc, char* argv[]) {
                 cout << "Enter new information:" << endl;
                 message.employee = ModifyEmployee(message.employee);
                 message.type = WRITE_REQUEST_READY;
-                message.id = threadId;
                 
-                WriteFile(
-                    hNamedPipe, // pipe handle
-                    &message, // buffer for output
-                    sizeof(Message), // bytes to write
-                    &dwBytesWrite, // bytes written
-                    (LPOVERLAPPED)NULL // synchronous write
-                );
+                // Send modified record to server
+                if (!WriteFile(hPipe, &message, sizeof(Message), &bytesWritten, NULL)) {
+                    cerr << "WriteFile failed. Error: " << GetLastError() << endl;
+                    break;
+                }
                 
-                SetEvent(NeedToRead);
-                WaitForSingleObject(ICanRead, INFINITE);
-                ResetEvent(ICanRead);
-                
-                ReadFile(
-                    hNamedPipe, // pipe handle
-                    &message, // buffer for input
-                    sizeof(Message), // bytes to read
-                    &dwBytesRead, // bytes read
-                    (LPOVERLAPPED)NULL // synchronous read
-                );
+                // Read confirmation from server
+                if (!ReadFile(hPipe, &message, sizeof(Message), &bytesRead, NULL)) {
+                    cerr << "ReadFile failed. Error: " << GetLastError() << endl;
+                    break;
+                }
                 
                 if (message.type == SUCCESS) {
                     cout << "Record successfully updated:" << endl;
@@ -216,15 +145,17 @@ int main(int argc, char* argv[]) {
                     cout << "Failed to update record." << endl;
                 }
             }
-            break;
-            
-        default:
+        }
+        else {
             cout << "Invalid option. Please try again." << endl;
-            break;
         }
     }
     
-    // This should never be reached, but just in case
-    CleanUp();
+    // Clean up
+    CloseHandle(hPipe);
+    cout << "Disconnected from server. Press Enter to exit...";
+    cin.ignore();
+    cin.get();
+    
     return 0;
 }
