@@ -9,6 +9,9 @@ using namespace std;
 
 vector<Employee> employees;
 vector<RecordLock> locks;
+
+vector<HANDLE> pi;
+vector<HANDLE> hi
 string fileName;
 HANDLE hPipe;
 bool serverRunning = true;
@@ -22,11 +25,12 @@ int FindEmployeeById(int id) {
     return -1;
 }
 
-// Cleanup locks before exiting
-void CleanupLocks() {
+void Cleanup() {
     for (size_t i = 0; i < locks.size(); i++) {
         CloseHandle(locks[i].mutex);
+
     }
+    CloseHandle()
 }
 
 
