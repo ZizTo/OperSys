@@ -181,7 +181,7 @@ int main() {
         
         // Create the client process - IMPORTANT: Make sure the client executable name matches exactly
         // Note: The client executable should be in the current directory or use full path
-        string commLine = "Client.exe " + to_string(i);  // Changed from Client98.exe to Client.exe
+        string commLine = "Client98.exe " + to_string(i);  // Changed from Client98.exe to Client.exe
         cout << "Launching: " << commLine << endl;
         
         if (!CreateProcess(NULL, (LPSTR)commLine.c_str(), NULL, NULL, FALSE,
